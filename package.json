@@ -1,0 +1,44 @@
+{
+  "name": "directcall",
+  "version": "1.1.0",
+  "description": "P2P голосовые звонки и демонстрация экрана без сервера",
+  "main": "main.js",
+  "author": "moxxtYu",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "build": {
+    "appId": "com.moxxtyu.directcall",
+    "productName": "DirectCall",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "style.css",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "DirectCall",
+      "artifactName": "DirectCall-Setup-${version}.${ext}"
+    }
+  }
+}

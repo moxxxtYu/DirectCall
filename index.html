@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>DirectCall</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header id="app-header">
+      <div class="logo">DIRECT<span>CALL</span></div>
+      <div class="tagline">p2p · без серверов</div>
+    </header>
+
+    <!-- Главный экран -->
+    <section id="view-home" class="view active">
+      <div class="block">
+        <div class="block-label">Твой адрес — скинь другу</div>
+        <div id="addr-list" class="addr-list">
+          <div class="addr-row"><span class="addr-ip">…</span><span class="addr-tag">загрузка</span></div>
+        </div>
+      </div>
+
+      <button id="btn-host" class="primary">Создать звонок</button>
+
+      <div class="block">
+        <div class="block-label">Подключиться к другу</div>
+        <div class="join-row">
+          <input id="join-ip" type="text" placeholder="IP хоста" spellcheck="false" />
+          <button id="btn-join" class="primary sq">→</button>
+        </div>
+      </div>
+
+      <div class="hint">Одна сеть / VPN — работает сразу.<br>Через интернет — хосту нужен проброс порта <b>9944</b>.</div>
+    </section>
+
+    <!-- Ожидание (хост) -->
+    <section id="view-host" class="view">
+      <div class="pulse-ring"><div class="pulse-core"></div></div>
+      <div class="status-big">Ожидание собеседника</div>
+      <div class="hint">Друг должен ввести твой IP.<br>Порт <b>9944</b> открыт.</div>
+      <button id="btn-cancel-host" class="ghost">Отмена</button>
+    </section>
+
+    <!-- Подключение (гость) -->
+    <section id="view-connecting" class="view">
+      <div class="pulse-ring"><div class="pulse-core"></div></div>
+      <div class="status-big" id="connecting-text">Подключение…</div>
+      <button id="btn-cancel-join" class="ghost">Отмена</button>
+    </section>
+
+    <!-- Разговор -->
+    <section id="view-call" class="view">
+      <div class="callbar">
+        <span class="live-dot"></span>
+        <span class="callbar-status">в разговоре</span>
+        <span class="callbar-meta" id="badge-time">00:00</span>
+        <span class="callbar-meta" id="badge-ping">— мс</span>
+      </div>
+
+      <div id="video-wrap" class="video-wrap">
+        <video id="remote-video" autoplay playsinline></video>
+      </div>
+
+      <div id="chat-log" class="chat-log"></div>
+      <div class="chat-row">
+        <input id="chat-input" type="text" placeholder="Сообщение…" spellcheck="false" />
+        <button id="btn-chat-send" class="primary sq">→</button>
+      </div>
+
+      <div class="call-controls">
+        <button id="btn-mute" class="round" title="Микрофон вкл/выкл">
+          <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-noise" class="round active" title="Шумоподавление вкл/выкл">
+          <svg viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-share" class="round" title="Демонстрация экрана">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 20h6M12 16v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-hangup" class="round hangup" title="Завершить">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+
+    <!-- Выбор экрана/окна для демонстрации -->
+    <div id="picker" class="picker">
+      <div class="picker-panel">
+        <div class="picker-title">Что показать</div>
+        <div id="picker-grid" class="picker-grid"></div>
+        <button id="picker-cancel" class="ghost">Отмена</button>
+      </div>
+    </div>
+  </div>
+  <audio id="remote-audio" autoplay></audio>
+  <script src="renderer.js"></script>
+</body>
+</html>

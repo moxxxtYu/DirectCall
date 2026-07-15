@@ -63,24 +63,27 @@ header { text-align: center; margin-bottom: 26px; }
   margin-bottom: 12px;
 }
 
-.addr-list { display: flex; flex-direction: column; gap: 8px; }
+.block-label.center { text-align: center; margin-bottom: 0; }
 
-.addr-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 9px 12px;
+.room-code {
+  font-family: Consolas, monospace;
+  font-size: 52px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+  padding: 26px 0;
+  margin: 4px 0;
   border: 1px solid var(--border);
   cursor: pointer;
   transition: border-color .15s;
+  user-select: text;
 }
-.addr-row:hover { border-color: var(--text); }
-.addr-row.rec { border-color: var(--text); }
-.addr-row.rec .addr-tag { color: var(--text); }
+.room-code:hover { border-color: var(--text); }
 
-.addr-ip { font-family: Consolas, monospace; font-size: 15px; }
-.addr-tag { color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+.primary.big { padding: 22px; font-size: 15px; margin-top: 8px; }
+
+.pulse-ring.small { width: 60px; height: 60px; margin: 14px auto 0; }
+.pulse-ring.small .pulse-core { width: 10px; height: 10px; }
 
 /* ---------- кнопки ---------- */
 

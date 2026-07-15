@@ -9,36 +9,30 @@
   <div class="app">
     <header id="app-header">
       <div class="logo">DIRECT<span>CALL</span></div>
-      <div class="tagline">p2p · без серверов</div>
+      <div class="tagline">звонки без пинга</div>
     </header>
 
     <!-- Главный экран -->
     <section id="view-home" class="view active">
-      <div class="block">
-        <div class="block-label">Твой адрес — скинь другу</div>
-        <div id="addr-list" class="addr-list">
-          <div class="addr-row"><span class="addr-ip">…</span><span class="addr-tag">загрузка</span></div>
-        </div>
-      </div>
-
-      <button id="btn-host" class="primary">Создать звонок</button>
+      <button id="btn-host" class="primary big">Создать звонок</button>
 
       <div class="block">
-        <div class="block-label">Подключиться к другу</div>
+        <div class="block-label">Подключиться по коду</div>
         <div class="join-row">
-          <input id="join-ip" type="text" placeholder="IP хоста" spellcheck="false" />
+          <input id="join-code" type="text" placeholder="000-000" maxlength="7" inputmode="numeric" spellcheck="false" />
           <button id="btn-join" class="primary sq">→</button>
         </div>
       </div>
 
-      <div class="hint">Одна сеть / VPN — работает сразу.<br>Через интернет — хосту нужен проброс порта <b>9944</b>.</div>
+      <div class="hint">Создай звонок — получишь код.<br>Скинь его другу, он введёт — и вы на связи.</div>
     </section>
 
-    <!-- Ожидание (хост) -->
+    <!-- Ожидание (создатель) -->
     <section id="view-host" class="view">
-      <div class="pulse-ring"><div class="pulse-core"></div></div>
-      <div class="status-big">Ожидание собеседника</div>
-      <div class="hint">Друг должен ввести твой IP.<br>Порт <b>9944</b> открыт.</div>
+      <div class="block-label center">Код звонка</div>
+      <div id="room-code" class="room-code" title="Нажми — скопировать">–––</div>
+      <div class="hint">Скинь код другу и жди.<br>Код живёт, пока открыт этот экран.</div>
+      <div class="pulse-ring small"><div class="pulse-core"></div></div>
       <button id="btn-cancel-host" class="ghost">Отмена</button>
     </section>
 

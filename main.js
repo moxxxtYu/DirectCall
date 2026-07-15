@@ -1,21 +1,19 @@
 const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
-const { WebSocketServer } = require('ws');
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 
-const PORT = 9944;
-
-// Тестовый режим: --test-host / --test-join — автоклик + фейковый микрофон
+// Тестовый режим: --test-host / --test-join — автоклик + фейковый микрофон,
+// код комнаты передаётся между инстансами через файл в temp.
 const TEST_HOST = process.argv.includes('--test-host');
 const TEST_JOIN = process.argv.includes('--test-join');
+const TEST_CODE_FILE = path.join(os.tmpdir(), 'directcall_test_code.txt');
 if (TEST_HOST || TEST_JOIN) {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream');
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 }
 
 let win = null;
-let wss = null;
-let remote = null;
 let shareSourceId = null; // источник для демонстрации экрана, выбирается в UI
 
 function createWindow() {
@@ -44,43 +42,6 @@ function createWindow() {
   }
 }
 
-function stopHost() {
-  if (remote) { try { remote.close(); } catch {} remote = null; }
-  if (wss) { try { wss.close(); } catch {} wss = null; }
-}
-
-ipcMain.handle('start-host', () => {
-  return new Promise((resolve, reject) => {
-    if (wss) return resolve(PORT);
-    wss = new WebSocketServer({ port: PORT }, () => resolve(PORT));
-    wss.on('error', (e) => { wss = null; reject(new Error(e.message)); });
-    wss.on('connection', (ws) => {
-      if (remote && remote.readyState === 1) { ws.close(); return; } // только 1 собеседник
-      remote = ws;
-      win.webContents.send('peer-connected');
-      ws.on('message', (data) => win.webContents.send('signal-in', data.toString()));
-      ws.on('close', () => { remote = null; win.webContents.send('peer-disconnected'); });
-    });
-  });
-});
-
-ipcMain.handle('stop-host', () => { stopHost(); });
-
-ipcMain.on('signal-out', (e, msg) => {
-  if (remote && remote.readyState === 1) remote.send(msg);
-});
-
-ipcMain.handle('get-local-ips', () => {
-  const ips = [];
-  const ifaces = os.networkInterfaces();
-  for (const name of Object.keys(ifaces)) {
-    for (const i of ifaces[name] || []) {
-      if (i.family === 'IPv4' && !i.internal) ips.push({ ip: i.address, iface: name });
-    }
-  }
-  return ips;
-});
-
 ipcMain.handle('get-screen-sources', async () => {
   const sources = await desktopCapturer.getSources({
     types: ['screen', 'window'],
@@ -95,6 +56,14 @@ ipcMain.handle('set-window-size', (e, w, h) => {
   if (win) { win.setSize(w, h); win.center(); }
 });
 
+// только для автотеста
+ipcMain.handle('test-put-code', (e, code) => {
+  if (TEST_HOST) fs.writeFileSync(TEST_CODE_FILE, code);
+});
+ipcMain.handle('test-get-code', () => {
+  try { return fs.readFileSync(TEST_CODE_FILE, 'utf8').trim(); } catch { return ''; }
+});
+
 app.whenReady().then(() => {
   // getDisplayMedia в Electron требует свой обработчик выбора источника.
   // audio: 'loopback' — захват системного звука (Windows), чтобы шёл звук из демонстрации.
@@ -106,7 +75,8 @@ app.whenReady().then(() => {
       catch { callback({ video: src }); }
     }).catch(() => callback({}));
   });
+  if (TEST_HOST) { try { fs.unlinkSync(TEST_CODE_FILE); } catch {} }
   createWindow();
 });
 
-app.on('window-all-closed', () => { stopHost(); app.quit(); });
+app.on('window-all-closed', () => { app.quit(); });

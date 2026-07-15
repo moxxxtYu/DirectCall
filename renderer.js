@@ -1,20 +1,21 @@
-// DirectCall — P2P звонок 1-на-1 без внешнего сервера.
-// Хост поднимает WebSocket на :9944, гость подключается по IP.
-// Звук/видео — WebRTC, чат — DataChannel, демонстрация экрана — getDisplayMedia
-// с докидыванием треков и перепереговорами (perfect negotiation).
+// DirectCall — P2P звонок 1-на-1 по коду комнаты.
+// Сервер знакомства (ws://SIGNAL_SERVER) сводит двоих по 6-значному коду и
+// пересылает сигналинг. Дальше всё P2P: звук/видео WebRTC, чат DataChannel.
+
+const SIGNAL_SERVER = 'ws://144.172.65.25:9945';
 
 const $ = (id) => document.getElementById(id);
 const views = ['view-home', 'view-host', 'view-connecting', 'view-call'];
 
-let role = null;          // 'host' | 'guest'
-let ws = null;            // сокет гостя
+let role = null;          // 'host' (создал код) | 'guest' (ввёл код)
+let ws = null;            // соединение с сервером знакомства
 let pc = null;
 let dc = null;            // чат
 let localStream = null;
 let shareStream = null;
 let shareSenders = [];
 let makingOffer = false;
-let polite = false;       // хост уступает при коллизии offer'ов
+let polite = false;       // создатель уступает при коллизии offer'ов
 let noiseOn = true;
 let callTimer = null;
 let pingTimer = null;
@@ -34,60 +35,62 @@ function toast(msg, ms = 3500) {
   toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// ---------- адреса на главном экране ----------
-
-// Виртуальные адаптеры (Docker/WSL/Hyper-V и т.п.) — мусор, скрываем.
-// Адреса VPN-сетей (Radmin 26.x, Hamachi 25.x, Tailscale 100.64+) — то, что
-// реально надо кидать другу через интернет, подсвечиваем как рекомендуемые.
-const VIRTUAL_IFACE = /vethernet|wsl|docker|virtualbox|vmware|hyper-v|loopback|bluetooth|виртуальн|tun|tap/i;
-
-function classifyAddr(ip, iface) {
-  if (VIRTUAL_IFACE.test(iface)) return null;
-  const [a, b] = ip.split('.').map(Number);
-  if (a === 169 && b === 254) return null; // APIPA — адаптер без сети
-  if (a === 26) return { tag: 'radmin · кидай этот', rec: true };
-  if (a === 25) return { tag: 'hamachi · кидай этот', rec: true };
-  if (a === 100 && b >= 64 && b <= 127) return { tag: 'tailscale · кидай этот', rec: true };
-  return { tag: 'локальная сеть', rec: false };
+function fmtCode(code) {
+  return code.slice(0, 3) + '-' + code.slice(3);
 }
 
-async function loadAddresses() {
-  const rows = [];
-  const ips = await window.api.getLocalIps();
-  ips.forEach(({ ip, iface }) => {
-    const c = classifyAddr(ip, iface);
-    if (c) rows.push({ ip, ...c });
-  });
-  rows.sort((x, y) => (y.rec ? 1 : 0) - (x.rec ? 1 : 0));
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 4000);
-    const r = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
-    const j = await r.json();
-    if (j.ip && !rows.some((x) => x.ip === j.ip)) rows.push({ ip: j.ip, tag: 'внешний', rec: false });
-  } catch {}
-  $('addr-list').innerHTML = rows.length
-    ? rows.map((r) => `<div class="addr-row${r.rec ? ' rec' : ''}" data-ip="${r.ip}"><span class="addr-ip">${r.ip}</span><span class="addr-tag">${r.tag}</span></div>`).join('')
-    : '<div class="hint">Сетевые адреса не найдены</div>';
-  document.querySelectorAll('.addr-row').forEach((el) => {
-    el.addEventListener('click', () => {
-      navigator.clipboard.writeText(el.dataset.ip);
-      toast('Скопировано: ' + el.dataset.ip);
-    });
-  });
-}
+// ---------- сервер знакомства ----------
 
-// ---------- сигналинг ----------
+function connectSignal(onOpen) {
+  ws = new WebSocket(SIGNAL_SERVER);
+  const connectTimeout = setTimeout(() => {
+    if (ws && ws.readyState !== 1) ws.close();
+  }, 8000);
+
+  ws.onopen = () => { clearTimeout(connectTimeout); onOpen(); };
+
+  ws.onmessage = async (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+
+    if (msg.type === 'created') {
+      console.log('room created: ' + msg.code);
+      $('room-code').textContent = fmtCode(msg.code);
+      $('room-code').dataset.code = msg.code;
+      show('view-host');
+      if (testMode === 'host') window.api.testPutCode(msg.code);
+    } else if (msg.type === 'peer-joined') {
+      console.log('peer joined room');
+      createPeer(); // гость пришлёт offer
+    } else if (msg.type === 'joined') {
+      console.log('joined room');
+      createPeer(); // addTrack → negotiationneeded → offer уйдёт сам
+    } else if (msg.type === 'error') {
+      endCall(msg.message === 'room not found' ? 'Нет звонка с таким кодом' : 'Ошибка: ' + msg.message);
+    } else if (msg.type === 'peer-left') {
+      endCall('Собеседник отключился');
+    } else {
+      handleSignal(msg);
+    }
+  };
+
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    clearTimeout(connectTimeout);
+    // при активном P2P-звонке сервер уже не нужен — не рвём разговор
+    if (role && (!pc || pc.connectionState !== 'connected')) {
+      endCall(pc ? 'Соединение закрыто' : 'Сервер недоступен. Проверь интернет');
+    }
+  };
+}
 
 function sendSignal(obj) {
-  const msg = JSON.stringify(obj);
-  if (role === 'host') window.api.sendSignal(msg);
-  else if (ws && ws.readyState === 1) ws.send(msg);
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
-async function handleSignal(raw) {
-  let msg;
-  try { msg = JSON.parse(raw); } catch { return; }
+let pendingCandidates = []; // кандидаты, пришедшие раньше remoteDescription
+
+async function handleSignal(msg) {
   if (!pc) return;
   try {
     if (msg.type === 'description') {
@@ -95,11 +98,15 @@ async function handleSignal(raw) {
       const collision = d.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
       if (!polite && collision) return; // невежливый игнорирует встречный offer
       await pc.setRemoteDescription(d);
+      for (const c of pendingCandidates.splice(0)) {
+        try { await pc.addIceCandidate(c); } catch (e) { console.log('ice err: ' + e.message); }
+      }
       if (d.type === 'offer') {
         await pc.setLocalDescription();
         sendSignal({ type: 'description', description: pc.localDescription });
       }
     } else if (msg.type === 'candidate' && msg.candidate) {
+      if (!pc.remoteDescription) { pendingCandidates.push(msg.candidate); return; }
       try { await pc.addIceCandidate(msg.candidate); } catch (e) { console.log('ice err: ' + e.message); }
     }
   } catch (e) {
@@ -119,7 +126,10 @@ async function getMic() {
 function createPeer() {
   polite = role === 'host';
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ],
   });
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
@@ -290,8 +300,8 @@ function endCall(reason) {
   if (dc) { try { dc.close(); } catch {} dc = null; }
   if (pc) { try { pc.close(); } catch {} pc = null; }
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
-  if (ws) { try { ws.close(); } catch {} ws = null; }
-  window.api.stopHost();
+  if (ws) { const w = ws; ws = null; try { w.close(); } catch {} }
+  pendingCandidates = [];
   role = null;
   $('chat-log').innerHTML = '';
   $('badge-time').textContent = '00:00';
@@ -301,7 +311,7 @@ function endCall(reason) {
   if (reason) toast(reason);
 }
 
-// ---------- хост ----------
+// ---------- создать / подключиться ----------
 
 async function startHost() {
   role = 'host';
@@ -312,32 +322,12 @@ async function startHost() {
     toast('Нет доступа к микрофону: ' + e.message);
     return;
   }
-  try {
-    await window.api.startHost();
-  } catch (e) {
-    endCall('Не удалось открыть порт 9944: ' + e.message);
-    return;
-  }
-  show('view-host');
+  connectSignal(() => sendSignal({ type: 'create' }));
 }
 
-window.api.onPeerConnected(() => {
-  if (role !== 'host') return;
-  console.log('peer connected to host socket');
-  createPeer(); // гость пришлёт offer
-});
-
-window.api.onPeerDisconnected(() => {
-  if (role === 'host' && pc) endCall('Собеседник отключился');
-});
-
-window.api.onSignal((msg) => handleSignal(msg));
-
-// ---------- гость ----------
-
-async function joinCall(ip) {
+async function joinCall(code) {
   role = 'guest';
-  $('connecting-text').textContent = 'Подключение к ' + ip;
+  $('connecting-text').textContent = 'Подключение…';
   show('view-connecting');
   try {
     await getMic();
@@ -347,23 +337,7 @@ async function joinCall(ip) {
     toast('Нет доступа к микрофону: ' + e.message);
     return;
   }
-
-  ws = new WebSocket('ws://' + ip + ':9944');
-  const connectTimeout = setTimeout(() => {
-    if (ws && ws.readyState !== 1) ws.close();
-  }, 8000);
-
-  ws.onopen = () => {
-    clearTimeout(connectTimeout);
-    console.log('ws connected to host');
-    createPeer(); // addTrack → negotiationneeded → offer уйдёт сам
-  };
-  ws.onmessage = (e) => handleSignal(e.data);
-  ws.onerror = () => {};
-  ws.onclose = () => {
-    clearTimeout(connectTimeout);
-    if (role === 'guest') endCall(pc ? 'Соединение закрыто' : 'Хост недоступен. Проверь IP и порт 9944');
-  };
+  connectSignal(() => sendSignal({ type: 'join', code }));
 }
 
 // ---------- кнопки ----------
@@ -371,11 +345,18 @@ async function joinCall(ip) {
 $('btn-host').addEventListener('click', startHost);
 
 $('btn-join').addEventListener('click', () => {
-  const ip = $('join-ip').value.trim();
-  if (!ip) { toast('Введи IP хоста'); return; }
-  joinCall(ip);
+  const code = $('join-code').value.replace(/\D/g, '');
+  if (code.length !== 6) { toast('Код — 6 цифр'); return; }
+  joinCall(code);
 });
-$('join-ip').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
+$('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
+
+$('room-code').addEventListener('click', () => {
+  const code = $('room-code').dataset.code;
+  if (!code) return;
+  navigator.clipboard.writeText(code);
+  toast('Код скопирован: ' + fmtCode(code));
+});
 
 $('btn-cancel-host').addEventListener('click', () => endCall());
 $('btn-cancel-join').addEventListener('click', () => endCall());
@@ -423,13 +404,22 @@ $('btn-chat-send').addEventListener('click', () => {
 });
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-chat-send').click(); });
 
-// ---------- старт ----------
-
-loadAddresses();
+// ---------- автотест ----------
 
 window.api.onTestMode((mode) => {
   console.log('test mode: ' + mode);
   testMode = mode === 'host' ? 'host' : 'guest';
-  if (mode === 'host') startHost();
-  else setTimeout(() => joinCall('127.0.0.1'), 2500);
+  if (mode === 'host') { startHost(); return; }
+  // гость: ждём, пока хост запишет код комнаты в temp-файл
+  let tries = 0;
+  const poll = setInterval(async () => {
+    const code = await window.api.testGetCode();
+    if (code && code.length === 6) {
+      clearInterval(poll);
+      joinCall(code);
+    } else if (++tries > 30) {
+      clearInterval(poll);
+      console.log('TEST: no code from host');
+    }
+  }, 500);
 });

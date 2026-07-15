@@ -1,6 +1,6 @@
 {
   "name": "directcall",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "P2P голосовые звонки и демонстрация экрана без сервера",
   "main": "main.js",
   "author": "moxxtYu",

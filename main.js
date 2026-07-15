@@ -75,7 +75,7 @@ ipcMain.handle('get-local-ips', () => {
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const i of ifaces[name] || []) {
-      if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
+      if (i.family === 'IPv4' && !i.internal) ips.push({ ip: i.address, iface: name });
     }
   }
   return ips;

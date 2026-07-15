@@ -76,6 +76,8 @@ header { text-align: center; margin-bottom: 26px; }
   transition: border-color .15s;
 }
 .addr-row:hover { border-color: var(--text); }
+.addr-row.rec { border-color: var(--text); }
+.addr-row.rec .addr-tag { color: var(--text); }
 
 .addr-ip { font-family: Consolas, monospace; font-size: 15px; }
 .addr-tag { color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }

@@ -36,19 +36,38 @@ function toast(msg, ms = 3500) {
 
 // ---------- адреса на главном экране ----------
 
+// Виртуальные адаптеры (Docker/WSL/Hyper-V и т.п.) — мусор, скрываем.
+// Адреса VPN-сетей (Radmin 26.x, Hamachi 25.x, Tailscale 100.64+) — то, что
+// реально надо кидать другу через интернет, подсвечиваем как рекомендуемые.
+const VIRTUAL_IFACE = /vethernet|wsl|docker|virtualbox|vmware|hyper-v|loopback|bluetooth|виртуальн|tun|tap/i;
+
+function classifyAddr(ip, iface) {
+  if (VIRTUAL_IFACE.test(iface)) return null;
+  const [a, b] = ip.split('.').map(Number);
+  if (a === 169 && b === 254) return null; // APIPA — адаптер без сети
+  if (a === 26) return { tag: 'radmin · кидай этот', rec: true };
+  if (a === 25) return { tag: 'hamachi · кидай этот', rec: true };
+  if (a === 100 && b >= 64 && b <= 127) return { tag: 'tailscale · кидай этот', rec: true };
+  return { tag: 'локальная сеть', rec: false };
+}
+
 async function loadAddresses() {
   const rows = [];
   const ips = await window.api.getLocalIps();
-  ips.forEach((ip) => rows.push({ ip, tag: 'локальный' }));
+  ips.forEach(({ ip, iface }) => {
+    const c = classifyAddr(ip, iface);
+    if (c) rows.push({ ip, ...c });
+  });
+  rows.sort((x, y) => (y.rec ? 1 : 0) - (x.rec ? 1 : 0));
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const r = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
     const j = await r.json();
-    if (j.ip && !ips.includes(j.ip)) rows.push({ ip: j.ip, tag: 'внешний' });
+    if (j.ip && !rows.some((x) => x.ip === j.ip)) rows.push({ ip: j.ip, tag: 'внешний', rec: false });
   } catch {}
   $('addr-list').innerHTML = rows.length
-    ? rows.map((r) => `<div class="addr-row" data-ip="${r.ip}"><span class="addr-ip">${r.ip}</span><span class="addr-tag">${r.tag}</span></div>`).join('')
+    ? rows.map((r) => `<div class="addr-row${r.rec ? ' rec' : ''}" data-ip="${r.ip}"><span class="addr-ip">${r.ip}</span><span class="addr-tag">${r.tag}</span></div>`).join('')
     : '<div class="hint">Сетевые адреса не найдены</div>';
   document.querySelectorAll('.addr-row').forEach((el) => {
     el.addEventListener('click', () => {
